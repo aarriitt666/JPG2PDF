@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Upload Images</title>
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.0-alpha2/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="container mt-5">
+
+<div class="row">
+    <div class="col-md-6 offset-md-3">
+        <h3 class="text-center">Upload and Convert Images</h3>
+        <div id="alert" class="alert d-none" role="alert"></div>
+
+        <form id="uploadForm" enctype="multipart/form-data">
+             <!-- CSRF Token -->
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="mb-3">
+                <label for="directory" class="form-label">Directory Name</label>
+                <input type="text" class="form-control" name="directory" required>
+            </div>
+            <div class="mb-3">
+                <label for="photo" class="form-label">Upload Files</label>
+                <input type="file" class="form-control" name="photo" multiple>
+            </div>
+            <button type="submit" class="btn btn-primary">Upload and Convert</button>
+        </form>
+    </div>
+</div>
+
+<!-- Bootstrap 5 JS and Popper.js -->
+<script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.10.2/dist/umd/popper.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.0-alpha2/dist/js/bootstrap.min.js"></script>
+
+<!-- AJAX to submit form without reloading the page -->
+<script>
+    document.getElementById('uploadForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+
+        const formData = new FormData(this);
+        // Append CSRF token to the form data
+        formData.append("csrf_token", document.querySelector("[name=csrf_token]").value);
+
+        fetch('/upload', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Handle success (e.g., show a success message or download the PDF)
+                const alertBox = document.getElementById('alert');
+                alertBox.className = 'alert alert-success';
+                alertBox.textContent = 'Successfully uploaded and converted!';
+                alertBox.classList.remove('d-none');
+
+                // Initiate a download of the merged PDF using the provided path
+                window.location.href = `/${data.path}`;
+            } else {
+                // Handle errors (e.g., show an error message to the user)
+                const alertBox = document.getElementById('alert');
+                alertBox.className = 'alert alert-danger';
+                alertBox.textContent = 'Error: ' + data.error;
+                alertBox.classList.remove('d-none');
+            }
+        })
+        .catch(error => {
+            console.error('Error uploading and converting images:', error);
+        });
+    });
+</script>
+
+</body>
+</html>
