@@ -59,7 +59,8 @@ def upload():
             os.makedirs(upload_dest)
 
         # Save uploaded images
-        filenames = photos.save(request.files.getlist('photo'))
+        uploaded_files = request.files.getlist('photo')
+        filenames = [photos.save(file) for file in uploaded_files]
 
         # Convert images to PDFs
         pdf_files = []
@@ -87,6 +88,11 @@ def upload():
         return jsonify(success=True, path=relative_path)
 
     return render_template('upload.html')
+
+
+@app.route('/<path:filename>', methods=['GET', 'POST'])
+def download(filename):
+    return send_from_directory(directory='my_uploads', filename=filename)
 
 
 if __name__ == '__main__':
