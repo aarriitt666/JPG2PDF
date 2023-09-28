@@ -70,11 +70,14 @@ def upload():
                 img.convert('RGB').save(os.path.join(app.config['UPLOADED_PHOTOS_DEST'], pdf_filename))
                 pdf_files.append(pdf_filename)
 
-        # Merge PDFs
+        # Merge PDFs and add bookmarks
         merger = PyPDF2.PdfMerger()
-        for pdf_file in pdf_files:
+        for index, pdf_file in enumerate(pdf_files):
             with open(os.path.join(app.config['UPLOADED_PHOTOS_DEST'], pdf_file), 'rb') as f:
                 merger.append(f)
+                merger.add_outline_item(title=f"Image {index + 1}", pagenum=index, parent=None)
+
+        # Save the merged PDF
         output_pdf = "merged.pdf"
         with open(os.path.join(app.config['UPLOADED_PHOTOS_DEST'], output_pdf), 'wb') as out:
             merger.write(out)
