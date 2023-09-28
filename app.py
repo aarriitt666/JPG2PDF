@@ -1,3 +1,6 @@
+# This app is using an older flask version because it relies on flask_uploads which isn't compatible to the newer
+# flask version.
+
 from flask import Flask, render_template, request, send_from_directory, jsonify
 from flask_uploads import UploadSet, configure_uploads, IMAGES
 from flask_wtf.csrf import CSRFProtect
@@ -5,6 +8,7 @@ from PIL import Image
 import PyPDF2
 import os
 from dotenv import load_dotenv
+from flask import redirect, url_for
 
 load_dotenv()
 
@@ -29,6 +33,11 @@ def sanitize_directory(directory):
         raise ValueError("Invalid directory name provided")
 
     return sanitized
+
+
+@app.route('/')
+def index():
+    return redirect(url_for('upload'))
 
 
 @app.route('/upload', methods=['GET', 'POST'])
