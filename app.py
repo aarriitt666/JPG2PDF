@@ -21,6 +21,10 @@ photos = UploadSet('photos', IMAGES)
 app.config['UPLOADED_PHOTOS_DEST'] = 'uploads'
 configure_uploads(app, photos)
 
+MAX_IMAGES = int(os.getenv('MAX_IMAGES'))
+MAX_PDF_SIZE_MB = int(os.getenv('MAX_PDF_SIZE_MB'))
+MAX_PDF_SIZE_BYTES = MAX_PDF_SIZE_MB * 1024 * 1024  # Convert MB to Bytes
+
 
 def sanitize_directory(directory):
     # Remove any up-level references and redundant separators
@@ -40,13 +44,79 @@ def index():
     return redirect(url_for('upload'))
 
 
+# @app.route('/upload', methods=['GET', 'POST'])
+# def upload():
+#     if request.method == 'POST' and 'photo' in request.files:
+#         try:
+#             # Get the directory from user input
+#             directory = sanitize_directory(request.form.get('directory'))
+#
+#         except ValueError as e:
+#             # Return a JSON error message for AJAX
+#             return jsonify(success=False, error=str(e))
+#
+#         # Ensure the base directory 'my_uploads' exists
+#         base_dir = 'my_uploads'
+#         if not os.path.exists(base_dir):
+#             os.makedirs(base_dir)
+#
+#         # Set the upload destination dynamically
+#         upload_dest = os.path.join(base_dir, directory)
+#         app.config['UPLOADED_PHOTOS_DEST'] = upload_dest
+#
+#         # Reconfigure the UploadSet
+#         configure_uploads(app, photos)
+#
+#         # Ensure the directory exists
+#         if not os.path.exists(upload_dest):
+#             os.makedirs(upload_dest)
+#
+#         # Save uploaded images
+#         uploaded_files = request.files.getlist('photo')
+#         filenames = [photos.save(file) for file in uploaded_files]
+#
+#         # Convert images to PDFs
+#         pdf_files = []
+#         for filename in filenames:
+#             with Image.open(os.path.join(app.config['UPLOADED_PHOTOS_DEST'], filename)) as img:
+#                 pdf_filename = filename + ".pdf"
+#                 img.convert('RGB').save(os.path.join(app.config['UPLOADED_PHOTOS_DEST'], pdf_filename))
+#                 pdf_files.append(pdf_filename)
+#
+#         # Merge PDFs and add bookmarks
+#         merger = PyPDF2.PdfMerger()
+#         for index, pdf_file in enumerate(pdf_files):
+#             with open(os.path.join(app.config['UPLOADED_PHOTOS_DEST'], pdf_file), 'rb') as f:
+#                 merger.append(f)
+#                 merger.add_outline_item(title=f"Image {index + 1}", pagenum=index, parent=None)
+#
+#         # Save the merged PDF
+#         output_pdf = "merged.pdf"
+#         with open(os.path.join(app.config['UPLOADED_PHOTOS_DEST'], output_pdf), 'wb') as out:
+#             merger.write(out)
+#
+#         # Clean up individual PDFs and images
+#         for file in pdf_files + filenames:
+#             os.remove(os.path.join(app.config['UPLOADED_PHOTOS_DEST'], file))
+#
+#         # After successfully processing the images and creating the merged PDF
+#         relative_path = os.path.join(directory, output_pdf)
+#         return jsonify(success=True, path=relative_path)
+#
+#     return render_template('upload.html')
+
 @app.route('/upload', methods=['GET', 'POST'])
 def upload():
     if request.method == 'POST' and 'photo' in request.files:
+        uploaded_files = request.files.getlist('photo')
+
+        # Check for number of images
+        if len(uploaded_files) > MAX_IMAGES:
+            return jsonify(success=False, error=f"Exceeded the limit of {MAX_IMAGES} images.")
+
         try:
             # Get the directory from user input
             directory = sanitize_directory(request.form.get('directory'))
-
         except ValueError as e:
             # Return a JSON error message for AJAX
             return jsonify(success=False, error=str(e))
@@ -67,8 +137,6 @@ def upload():
         if not os.path.exists(upload_dest):
             os.makedirs(upload_dest)
 
-        # Save uploaded images
-        uploaded_files = request.files.getlist('photo')
         filenames = [photos.save(file) for file in uploaded_files]
 
         # Convert images to PDFs
@@ -90,6 +158,12 @@ def upload():
         output_pdf = "merged.pdf"
         with open(os.path.join(app.config['UPLOADED_PHOTOS_DEST'], output_pdf), 'wb') as out:
             merger.write(out)
+
+        # Check for size of the generated PDF
+        output_pdf_path = os.path.join(app.config['UPLOADED_PHOTOS_DEST'], output_pdf)
+        if os.path.getsize(output_pdf_path) > MAX_PDF_SIZE_BYTES:
+            os.remove(output_pdf_path)
+            return jsonify(success=False, error=f"Generated PDF exceeds the size limit of {MAX_PDF_SIZE_MB} MB.")
 
         # Clean up individual PDFs and images
         for file in pdf_files + filenames:
