@@ -2,6 +2,16 @@
 # flask version. If this is your first time running this script or database got refresh somehow, you need to do [
 # flask initdb] in the terminal.
 
+# TODO:  Need to encrypt users' password.  Right now if user registers for an account the password is in plain text.
+# TODO:  Implement admin panel
+# TODO:  Implement user panel
+# TODO:  Admin and User panel should have Inbox for receiving messages from each other user.
+# TODO:  Implement request to download a pdf file if the file isn't belonging to the same user.
+#  If it's then no need to ask for permission.  The request would go to the inbox and if the other user approves inside
+#  the inbox then the message would return to the request user with a specific download link for this specific pdf
+#  file with expiration date and time.
+
+
 from flask import Flask, render_template, request, send_from_directory, jsonify
 from flask_uploads import UploadSet, configure_uploads, IMAGES
 from flask_wtf.csrf import CSRFProtect
