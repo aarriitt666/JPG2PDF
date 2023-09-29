@@ -1,5 +1,6 @@
 # This app is using an older flask version because it relies on flask_uploads which isn't compatible to the newer
-# flask version.
+# flask version. If this is your first time running this script or database got refresh somehow, you need to do [
+# flask initdb] in the terminal.
 
 from flask import Flask, render_template, request, send_from_directory, jsonify
 from flask_uploads import UploadSet, configure_uploads, IMAGES
@@ -9,6 +10,14 @@ import PyPDF2
 import os
 from dotenv import load_dotenv
 from flask import redirect, url_for
+from flask_sqlalchemy import SQLAlchemy
+from flask_migrate import Migrate
+from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
+from flask_wtf import FlaskForm
+from wtforms import StringField, PasswordField, SubmitField, validators
+from flask.cli import with_appcontext
+from flask_migrate import init as _init
+import shutil
 
 load_dotenv()
 
@@ -25,6 +34,66 @@ MAX_IMAGES = int(os.getenv('MAX_IMAGES'))
 MAX_PDF_SIZE_MB = int(os.getenv('MAX_PDF_SIZE_MB'))
 MAX_PDF_SIZE_BYTES = MAX_PDF_SIZE_MB * 1024 * 1024  # Convert MB to Bytes
 
+DATABASE_URI = os.getenv('DATABASE_URI')
+app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URI
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+db = SQLAlchemy(app)
+migrate = Migrate(app, db)
+
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = 'login'
+
+flask_app = os.getenv('FLASK_APP')
+
+
+@login_manager.user_loader
+def load_user(user_id):
+    return User.query.get(int(user_id))
+
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    login_failed = False
+    if request.method == 'POST':
+        # Get the form data
+        username = request.form['username']
+        password = request.form['password']
+
+        # Check the database for this user
+        user = User.query.filter_by(username=username).first()
+
+        # Validate the user
+        if user and user.password == password:  # Note: In a real application, always hash and salt the password!
+            login_user(user)
+            return redirect(url_for('index'))
+        else:
+            login_failed = True
+
+    return render_template('login.html', login_failed=login_failed)
+
+
+@app.route('/logout')
+@login_required
+def logout():
+    logout_user()
+    return redirect(url_for('index'))
+
+
+class User(UserMixin, db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80), unique=True, nullable=False)
+    password = db.Column(db.String(120), nullable=False)
+    is_admin = db.Column(db.Boolean, default=False)  # Add this line
+    uploads = db.relationship('Upload', backref='user', lazy=True)
+
+
+class Upload(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    filename = db.Column(db.String(255), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+
 
 def sanitize_directory(directory):
     # Remove any up-level references and redundant separators
@@ -39,73 +108,46 @@ def sanitize_directory(directory):
     return sanitized
 
 
+class RegistrationForm(FlaskForm):
+    username = StringField('Username', [validators.Length(min=4, max=25)])
+    email = StringField('Email Address', [validators.Length(min=6, max=35)])
+    password = PasswordField('New Password', [
+        validators.DataRequired(),
+        validators.EqualTo('confirm', message='Passwords must match')
+    ])
+    confirm = PasswordField('Repeat Password')
+    submit = SubmitField('Register')
+
+
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    form = RegistrationForm()
+    if form.validate_on_submit():
+        existing_users = User.query.all()
+        new_user = User(username=form.username.data, password=form.password.data)
+
+        # If this is the first user, set them as admin
+        if not existing_users:
+            new_user.is_admin = True
+
+        db.session.add(new_user)
+        db.session.commit()
+
+        # Here, you would typically hash the password and save the user details to the database
+        # For demonstration purposes, let's just print the form data
+        print(f"Registered user: {form.username.data}, Email: {form.email.data}")
+        # Redirect to a success page or login page
+        return redirect(url_for('index'))
+    return render_template('register.html', form=form)
+
+
 @app.route('/')
 def index():
     return redirect(url_for('upload'))
 
 
-# @app.route('/upload', methods=['GET', 'POST'])
-# def upload():
-#     if request.method == 'POST' and 'photo' in request.files:
-#         try:
-#             # Get the directory from user input
-#             directory = sanitize_directory(request.form.get('directory'))
-#
-#         except ValueError as e:
-#             # Return a JSON error message for AJAX
-#             return jsonify(success=False, error=str(e))
-#
-#         # Ensure the base directory 'my_uploads' exists
-#         base_dir = 'my_uploads'
-#         if not os.path.exists(base_dir):
-#             os.makedirs(base_dir)
-#
-#         # Set the upload destination dynamically
-#         upload_dest = os.path.join(base_dir, directory)
-#         app.config['UPLOADED_PHOTOS_DEST'] = upload_dest
-#
-#         # Reconfigure the UploadSet
-#         configure_uploads(app, photos)
-#
-#         # Ensure the directory exists
-#         if not os.path.exists(upload_dest):
-#             os.makedirs(upload_dest)
-#
-#         # Save uploaded images
-#         uploaded_files = request.files.getlist('photo')
-#         filenames = [photos.save(file) for file in uploaded_files]
-#
-#         # Convert images to PDFs
-#         pdf_files = []
-#         for filename in filenames:
-#             with Image.open(os.path.join(app.config['UPLOADED_PHOTOS_DEST'], filename)) as img:
-#                 pdf_filename = filename + ".pdf"
-#                 img.convert('RGB').save(os.path.join(app.config['UPLOADED_PHOTOS_DEST'], pdf_filename))
-#                 pdf_files.append(pdf_filename)
-#
-#         # Merge PDFs and add bookmarks
-#         merger = PyPDF2.PdfMerger()
-#         for index, pdf_file in enumerate(pdf_files):
-#             with open(os.path.join(app.config['UPLOADED_PHOTOS_DEST'], pdf_file), 'rb') as f:
-#                 merger.append(f)
-#                 merger.add_outline_item(title=f"Image {index + 1}", pagenum=index, parent=None)
-#
-#         # Save the merged PDF
-#         output_pdf = "merged.pdf"
-#         with open(os.path.join(app.config['UPLOADED_PHOTOS_DEST'], output_pdf), 'wb') as out:
-#             merger.write(out)
-#
-#         # Clean up individual PDFs and images
-#         for file in pdf_files + filenames:
-#             os.remove(os.path.join(app.config['UPLOADED_PHOTOS_DEST'], file))
-#
-#         # After successfully processing the images and creating the merged PDF
-#         relative_path = os.path.join(directory, output_pdf)
-#         return jsonify(success=True, path=relative_path)
-#
-#     return render_template('upload.html')
-
 @app.route('/upload', methods=['GET', 'POST'])
+@login_required
 def upload():
     if request.method == 'POST' and 'photo' in request.files:
         uploaded_files = request.files.getlist('photo')
@@ -159,6 +201,11 @@ def upload():
         with open(os.path.join(app.config['UPLOADED_PHOTOS_DEST'], output_pdf), 'wb') as out:
             merger.write(out)
 
+        full_output_path = directory + '/' + output_pdf
+        upload_record = Upload(filename=full_output_path, user_id=current_user.id)
+        db.session.add(upload_record)
+        db.session.commit()
+
         # Check for size of the generated PDF
         output_pdf_path = os.path.join(app.config['UPLOADED_PHOTOS_DEST'], output_pdf)
         if os.path.getsize(output_pdf_path) > MAX_PDF_SIZE_BYTES:
@@ -177,6 +224,7 @@ def upload():
 
 
 @app.route('/<path:filename>', methods=['GET', 'POST'])
+@login_required
 def download(filename):
     return send_from_directory(directory='my_uploads', filename=filename)
 
@@ -198,10 +246,63 @@ def list_pdfs():
         if os.path.isdir(folder_path):
             pdfs[folder] = [f for f in os.listdir(folder_path) if f.endswith('.pdf')]
 
+    # Add ownership information
+    ownerships = {}
+    for folder in all_folders:
+        uploads = Upload.query.filter_by(filename=f"{folder}/merged.pdf").first()
+        if uploads:
+            ownerships[folder] = uploads.user_id
+
+    print("Ownerships:", ownerships)
+
     return jsonify({
         "pdfs": pdfs,
+        "ownerships": ownerships,
+        "current_user_id": current_user.id if current_user.is_authenticated else None,
+        "is_admin": current_user.is_admin if current_user.is_authenticated else False,
         "total_pages": -(-len(all_folders) // items_per_page)  # Ceiling division
     })
+
+
+@app.route('/delete/<path:filename>', methods=['POST'])
+@login_required
+def delete_file(filename):
+    filepath = os.path.join('my_uploads', filename)
+
+    # Check if the file exists
+    if not os.path.exists(filepath):
+        return jsonify(success=False, error="File does not exist."), 404
+
+    # Try to remove the file
+    try:
+        os.remove(filepath)
+    except Exception as e:
+        return jsonify(success=False, error=f"Error deleting file: {str(e)}"), 500
+
+    # Try to remove the parent folder (only if it's empty)
+    parent_folder = os.path.dirname(filepath)
+    try:
+        # We use shutil.rmtree to ensure the folder is deleted even if not empty.
+        # However, be cautious with this. Make sure you really want to delete everything inside that folder.
+        shutil.rmtree(parent_folder)
+    except Exception as e:
+        return jsonify(success=False, error=f"Error deleting folder: {str(e)}"), 500
+
+    # If there's a reference in the database, remove it
+    upload_record = Upload.query.filter_by(filename=filename).first()
+    if upload_record:
+        db.session.delete(upload_record)
+        db.session.commit()
+
+    return jsonify(success=True, message="File and parent folder deleted successfully."), 200
+
+
+@app.cli.command("initdb")
+@with_appcontext
+def init_db_command():
+    """Initialize the database."""
+    _init(directory="migrations")
+    print("Initialized the database.")
 
 
 if __name__ == '__main__':
