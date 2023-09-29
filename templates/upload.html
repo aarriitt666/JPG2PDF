@@ -35,16 +35,26 @@
                             <button type="submit" class="btn btn-primary">Upload and Convert</button>
                         </div>
                         <div class="mt-3">
-                        <div class="mt-3">
-                        <div id="progressWrapper" class="d-none"> <!-- Keep the 'd-none' class here -->
-                            <div class="progress">
-                                <div id="progressBar" class="progress-bar" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" style="width: 0%;"></div>
+                            <div class="mt-3">
+                                <div id="progressWrapper" class="d-none"> <!-- Keep the 'd-none' class here -->
+                                    <div class="progress">
+                                        <div id="progressBar" class="progress-bar" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" style="width: 0%;"></div>
+                                    </div>
+                                    <p id="progressText" class="text-center mt-2">Uploading...</p>
+                                </div>
                             </div>
-                            <p id="progressText" class="text-center mt-2">Uploading...</p>
                         </div>
-                    </div>
-                    </div>
-
+                        <div class="mt-5">
+                            <h4>Existing PDFs</h4>
+                            <div class="row" id="pdfGrid">
+                                <!-- PDFs will be populated here by JavaScript -->
+                            </div>
+                            <nav aria-label="Page navigation" class="mt-4">
+                                <ul class="pagination" id="pdfPagination">
+                                    <!-- Pagination will be populated here by JavaScript -->
+                                </ul>
+                            </nav>
+                        </div>
                     </form>
                 </div>
             </div>
@@ -102,6 +112,66 @@
             console.error('Error uploading and converting images:', error);
         });
     });
+    // Function to fetch and display PDF list
+    function loadPDFList(page = 1) {
+        fetch(`/list_pdfs?page=${page}`)
+            .then(response => response.json())
+            .then(data => {
+                const pdfGrid = document.getElementById('pdfGrid');
+                pdfGrid.innerHTML = '';  // Clear existing content
+
+                for (let folder in data.pdfs) {
+                    if (data.pdfs[folder].length > 0) {
+                        const colDiv = document.createElement('div');
+                        colDiv.className = 'col-md-4 mb-3';
+                        const cardDiv = document.createElement('div');
+                        cardDiv.className = 'card h-100';
+                        const cardBody = document.createElement('div');
+                        cardBody.className = 'card-body';
+                        const folderTitle = document.createElement('h5');
+                        folderTitle.className = 'card-title';
+                        folderTitle.textContent = folder;
+                        cardBody.appendChild(folderTitle);
+
+                        data.pdfs[folder].forEach(pdf => {
+                            const pdfLink = document.createElement('a');
+                            pdfLink.href = '/' + folder + '/' + pdf;
+                            pdfLink.textContent = pdf;
+                            pdfLink.className = 'd-block card-text';
+                            cardBody.appendChild(pdfLink);
+                        });
+
+                        cardDiv.appendChild(cardBody);
+                        colDiv.appendChild(cardDiv);
+                        pdfGrid.appendChild(colDiv);
+                    }
+                }
+
+                // Pagination
+                const pagination = document.getElementById('pdfPagination');
+                pagination.innerHTML = '';  // Clear existing content
+                for (let i = 1; i <= data.total_pages; i++) {
+                    const li = document.createElement('li');
+                    li.className = i === page ? 'page-item active' : 'page-item';
+                    const a = document.createElement('a');
+                    a.className = 'page-link';
+                    a.href = '#';
+                    a.textContent = i;
+                    a.addEventListener('click', function(event) {
+                        event.preventDefault();
+                        loadPDFList(i);
+                    });
+                    li.appendChild(a);
+                    pagination.appendChild(li);
+                }
+            })
+            .catch(error => {
+                console.error('Error fetching PDF list:', error);
+            });
+    }
+
+    // Call the function to load PDF list on page load
+    loadPDFList();
 </script>
 </body>
 </html>

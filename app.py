@@ -107,5 +107,28 @@ def download(filename):
     return send_from_directory(directory='my_uploads', filename=filename)
 
 
+@app.route('/list_pdfs', methods=['GET'])
+def list_pdfs():
+    base_dir = 'my_uploads'
+    page = int(request.args.get('page', 1))
+    items_per_page = 3  # Adjust as needed
+    start_index = (page - 1) * items_per_page
+    end_index = start_index + items_per_page
+
+    pdfs = {}
+    all_folders = sorted(os.listdir(base_dir))
+    paginated_folders = all_folders[start_index:end_index]
+
+    for folder in paginated_folders:
+        folder_path = os.path.join(base_dir, folder)
+        if os.path.isdir(folder_path):
+            pdfs[folder] = [f for f in os.listdir(folder_path) if f.endswith('.pdf')]
+
+    return jsonify({
+        "pdfs": pdfs,
+        "total_pages": -(-len(all_folders) // items_per_page)  # Ceiling division
+    })
+
+
 if __name__ == '__main__':
     app.run(debug=True)
