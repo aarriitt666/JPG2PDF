@@ -12,7 +12,7 @@
 #  file with expiration date and time.
 
 
-from flask import Flask, render_template, request, send_from_directory, jsonify
+from flask import Flask, render_template, request, send_from_directory, jsonify, flash
 from flask_uploads import UploadSet, configure_uploads, IMAGES
 from flask_wtf.csrf import CSRFProtect
 from PIL import Image
@@ -28,6 +28,7 @@ from wtforms import StringField, PasswordField, SubmitField, validators
 from flask.cli import with_appcontext
 from flask_migrate import init as _init
 import shutil
+from werkzeug.security import generate_password_hash, check_password_hash
 
 load_dotenv()
 
@@ -63,6 +64,46 @@ def load_user(user_id):
     return User.query.get(int(user_id))
 
 
+class PasswordChangeForm(FlaskForm):
+    current_password = PasswordField('Current Password', [
+        validators.DataRequired(),
+    ])
+    new_password = PasswordField('New Password', [
+        validators.DataRequired(),
+        validators.EqualTo('confirm_new', message='New passwords must match')
+    ])
+    confirm_new = PasswordField('Confirm New Password')
+    submit = SubmitField('Change Password')
+
+
+@app.route('/change_password', methods=['GET', 'POST'])
+@login_required
+def change_password():
+    form = PasswordChangeForm()
+    if form.validate_on_submit():
+        # Verify if the current password is correct
+        is_correct_plain_text = current_user.password == form.current_password.data
+        is_correct_hashed = check_password_hash(current_user.password, form.current_password.data)
+
+        if not is_correct_plain_text and not is_correct_hashed:
+            flash('Current password is incorrect.', 'danger')
+            return render_template('change_password.html', form=form)
+
+        # Update the password with the new hashed password
+        hashed_password = generate_password_hash(form.new_password.data, method='sha256')
+        current_user.password = hashed_password
+        db.session.commit()
+
+        # Update the needs_password_update flag
+        current_user.needs_password_update = False
+        db.session.commit()
+
+        flash('Your password has been updated!', 'success')
+        return redirect(url_for('index'))
+
+    return render_template('change_password.html', form=form)
+
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     login_failed = False
@@ -75,8 +116,19 @@ def login():
         user = User.query.filter_by(username=username).first()
 
         # Validate the user
-        if user and user.password == password:  # Note: In a real application, always hash and salt the password!
+        if user and user.check_password(password):  # Using the check_password method
             login_user(user)
+
+            # Check if the user is an admin with a plain text password
+            if user.is_admin or user.password == password:
+                user.needs_password_update = True
+                db.session.commit()
+
+            # Redirect to change password if necessary
+            if user.needs_password_update:
+                flash('You need to update your password.', 'warning')
+                return redirect(url_for('change_password'))
+
             return redirect(url_for('index'))
         else:
             login_failed = True
@@ -97,6 +149,15 @@ class User(UserMixin, db.Model):
     password = db.Column(db.String(120), nullable=False)
     is_admin = db.Column(db.Boolean, default=False)  # Add this line
     uploads = db.relationship('Upload', backref='user', lazy=True)
+    needs_password_update = db.Column(db.Boolean, default=True)
+
+    def check_password(self, password):
+        # First check for plain text match
+        if self.password == password:
+            return True
+
+        # Then check for hashed password match
+        return check_password_hash(self.password, password)
 
 
 class Upload(db.Model):
@@ -134,7 +195,9 @@ def register():
     form = RegistrationForm()
     if form.validate_on_submit():
         existing_users = User.query.all()
-        new_user = User(username=form.username.data, password=form.password.data)
+        hashed_password = generate_password_hash(form.password.data, method='sha256')
+        new_user = User(username=form.username.data, password=hashed_password)
+        new_user.needs_password_update = False
 
         # If this is the first user, set them as admin
         if not existing_users:
