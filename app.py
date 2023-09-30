@@ -2,7 +2,6 @@
 # flask version. If this is your first time running this script or database got refresh somehow, you need to do [
 # flask initdb] in the terminal.
 
-# TODO:  Need to encrypt users' password.  Right now if user registers for an account the password is in plain text.
 # TODO:  Implement admin panel
 # TODO:  Implement user panel
 # TODO:  Admin and User panel should have Inbox for receiving messages from each other user.
